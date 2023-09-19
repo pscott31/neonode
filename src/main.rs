@@ -3,10 +3,21 @@ use byteorder::{BigEndian, ByteOrder};
 // use protobuf::Message;
 // use protos::events;
 use bytes::{Buf, BytesMut};
+use num::BigInt;
 use prost::Message;
+// use rust_decimal_macros::dec;
+use rust_decimal::prelude::*;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Read;
+use surrealdb::engine::remote::ws::Ws;
+use surrealdb::opt::auth::Root;
+use surrealdb::sql::thing;
+use surrealdb::sql::{Id, Thing};
+use surrealdb::Surreal;
 
 pub mod vega {
     include!(concat!(env!("OUT_DIR"), "/vega.rs"));
@@ -49,17 +60,67 @@ fn next_event<T: Read>(reader: &mut T) -> Result<events::v1::BusEvent> {
     Ok(be)
 }
 
+#[derive(Debug, Serialize)]
+struct Order {
+    price: String,
+    // dave: Decimal,
+}
+
+#[derive(Debug, Deserialize)]
+struct Record {
+    #[allow(dead_code)]
+    id: Thing,
+}
+
 #[tokio::main]
-fn main() {
-    let cwd = std::env::current_dir().unwrap()
-    let db = Surreal::new::<SpeeDb>(cwd.join("data")).await?;
+async fn main() -> surrealdb::Result<()> {
+    let cwd = std::env::current_dir().unwrap();
+    // let db = Surreal::new::<SpeeDb>(cwd.join("data")).await.unwrap();
+    let db = Surreal::new::<Ws>("127.0.0.1:8000").await.unwrap();
+
+    db.signin(Root {
+        username: "root",
+        password: "root",
+    })
+    .await
+    .unwrap();
+
+    db.use_ns("vega").use_db("vega").await.unwrap();
 
     let event_file = cwd.join("testdata/eventlog.evt");
 
     let f = File::open(event_file).unwrap();
     let mut reader = BufReader::new(f);
     while let Ok(be) = next_event(&mut reader) {
-        println!("{:?}", be);
+        if let Some(event) = be.event {
+            match event {
+                events::v1::bus_event::Event::Order(oe) => {
+                    println!("{:?}", &oe);
+                    // let id = format!("order:{}", oe.id);
+                    let sql = "update $id SET price = type::decimal($price), size=100;";
+                    // let t = thing("order:aa").unwrap();
+                    let oid = Thing::from(("order", Id::String(oe.id)));
+                    let mut result = db
+                        .query(sql)
+                        .bind(("id", oid))
+                        .bind(("price", oe.price))
+                        .await?;
+                    let created: Option<Record> = result.take(0)?;
+                    // let pricedec = Decimal::from_str(&oe.price).unwrap();
+                    // let arse = dec!(23423432234324324243243242423);
+                    // let arse = BigInt::try_from("12323.232").unwrap();
+                    // let record: Option<Record> = db
+                    //     .update(("order", oe.id.clone()))
+                    //     .merge(Order {
+                    //         price: oe.price.clone(),
+                    //         // dave: arse,
+                    //     })
+                    //     .await?;
+                }
+                _ => {}
+            }
+        }
     }
     println!("Hello, world!");
+    Ok(())
 }

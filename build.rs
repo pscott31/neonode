@@ -51,11 +51,11 @@ impl SparseCheckout {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    SparseCheckout::new("develop").exec()?;
-    prost_build::compile_protos(
-        &["external/vega/protos/sources/vega/events/v1/events.proto"],
-        &["external/vega/protos/sources/"],
-    )?;
+    // SparseCheckout::new("develop").exec()?;
+    // prost_build::compile_protos(
+    //     &["external/vega/protos/sources/vega/events/v1/events.proto"],
+    //     &["external/vega/protos/sources/"],
+    // )?;
 
     let out_dir = env::var("OUT_DIR").unwrap();
     run_cmd! {
