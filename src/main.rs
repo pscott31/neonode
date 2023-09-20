@@ -97,15 +97,26 @@ async fn main() -> surrealdb::Result<()> {
                 events::v1::bus_event::Event::Order(oe) => {
                     println!("{:?}", &oe);
                     // let id = format!("order:{}", oe.id);
-                    let sql = "update $id SET price = type::decimal($price), size=100;";
+                    let sql = "update $id SET price = type::decimal($price), 
+                            size = type::decimal($size),
+                            market = $mid,
+                            party = $pid;
+                        ";
                     // let t = thing("order:aa").unwrap();
                     let oid = Thing::from(("order", Id::String(oe.id)));
+                    let pid = Thing::from(("party", Id::String(oe.party_id)));
+                    let mid = Thing::from(("market", Id::String(oe.market_id)));
                     let mut result = db
                         .query(sql)
                         .bind(("id", oid))
                         .bind(("price", oe.price))
+                        .bind(("size", oe.size))
+                        .bind(("pid", pid))
+                        .bind(("mid", mid))
                         .await?;
                     let created: Option<Record> = result.take(0)?;
+                    // let prel: Option<Record> = result.take(1)?;
+
                     // let pricedec = Decimal::from_str(&oe.price).unwrap();
                     // let arse = dec!(23423432234324324243243242423);
                     // let arse = BigInt::try_from("12323.232").unwrap();
