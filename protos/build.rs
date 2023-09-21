@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     run_cmd! {
         mkdir -p generated;
-        ln -sf $out_dir generated/protos;
+        ln -sfh $out_dir generated/protos;
     }?;
 
     Ok(())

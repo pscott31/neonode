@@ -1,7 +1,0 @@
-# REMOVE TABLE order;
-
-DEFINE TABLE order SCHEMAFULL;
-DEFINE FIELD price ON TABLE order TYPE decimal;
-DEFINE FIELD size ON TABLE order TYPE decimal;
-
-DEFINE TABLE party;

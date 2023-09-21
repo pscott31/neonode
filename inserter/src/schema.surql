@@ -22,7 +22,7 @@ DEFINE FIELD reason ON TABLE order TYPE string ASSERT type::is::string($value);
 DEFINE FIELD updated_at ON TABLE order TYPE datetime ASSERT type::is::datetime($value);
 DEFINE FIELD version ON TABLE order TYPE int ASSERT type::is::int($value);
 DEFINE FIELD batch_id ON TABLE order TYPE int ASSERT type::is::int($value);
--- DEFINE FIELD pegged_order ON TABLE order TYPE 
+DEFINE FIELD pegged_order ON TABLE order TYPE option<object>;
 DEFINE FIELD liquidity_provision_id ON TABLE order TYPE string ASSERT type::is::string($value);
 DEFINE FIELD post_only ON TABLE order TYPE bool ASSERT type::is::bool($value);
 DEFINE FIELD reduce_only ON TABLE order TYPE bool ASSERT type::is::bool($value);
@@ -34,4 +34,21 @@ DEFINE EVENT updated ON TABLE order THEN {
     UPDATE $party;
     UPDATE $market;
     RELATE $party->orders->$this;
+    RELATE $market->orders->$this;
+};
+
+DEFINE EVENT updated ON TABLE trade THEN {
+    LET $buyer = $after.buyer;
+    LET $seller = $after.seller;
+    LET $market = $after.market;
+    RELATE $buyer->trades->$this set side='buy';
+    RELATE $seller->trades->$this set side='sell';
+    RELATE $market->trades->$this;
+};
+
+DEFINE EVENT updated ON TABLE ledger_entry THEN {
+    LET $from_party = type::thing('party', $after.from_account.owner);
+    LET $to_party = type::thing('party', $after.to_account.owner);
+    RELATE $from_party->tranfered->$this set side='sent';
+    RELATE $from_party->tranfered->$this set side='received';
 };

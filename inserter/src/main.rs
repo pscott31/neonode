@@ -2,18 +2,21 @@ use anyhow::Result;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use prost::Message;
+use protos::vega::events::v1::{bus_event::Event, BusEvent};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Read;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
-use surrealdb::sql::{Id, Thing};
+use surrealdb::sql::Thing;
 use surrealdb::Surreal;
 
-use protos::vega::events;
+mod ledger;
+mod order;
+mod trade;
 
-fn next_event<T: Read>(reader: &mut T) -> Result<events::v1::BusEvent> {
+fn next_event<T: Read>(reader: &mut T) -> Result<BusEvent> {
     // Read in the size
     let mut size_arr = [0u8; 4];
     reader.read_exact(&mut size_arr)?;
@@ -29,7 +32,7 @@ fn next_event<T: Read>(reader: &mut T) -> Result<events::v1::BusEvent> {
     let mut buf = BytesMut::zeroed(size - 8);
     reader.read_exact(&mut buf)?;
 
-    let be = events::v1::BusEvent::decode(buf).unwrap();
+    let be = BusEvent::decode(buf).unwrap();
     Ok(be)
 }
 
@@ -70,61 +73,9 @@ async fn main() -> surrealdb::Result<()> {
     while let Ok(be) = next_event(&mut reader) {
         if let Some(event) = be.event {
             match event {
-                events::v1::bus_event::Event::Order(oe) => {
-                    println!("{:?}", &oe);
-
-                    let sql = "update $id SET 
-                            market = $mid,
-                            party = $pid,
-                            side = $side,
-                            price = type::decimal($price), 
-                            size = type::decimal($size),
-                            remaining = type::decimal($remaining),
-                            time_in_force = $tif,
-                            type = $type,
-                            created_at = time::from::micros($created_at),
-                            status = $status,
-                            expires_at = time::from::micros($expires_at),
-                            reference = $reference,
-                            reason = $reason,
-                            updated_at =  time::from::micros($updated_at),
-                            version = $version,
-                            batch_id = $batch_id,
-                            // pegged_order = $pegged_order,
-                            liquidity_provision_id = $liquidity_provision_id,
-                            post_only = $post_only,
-                            reduce_only = $reduce_only
-                            // iceberg_order = $iceberg_order
-                            ;
-                        ";
-
-                    let result = db
-                        .query(sql)
-                        .bind(("id", Thing::from(("order", Id::from(&oe.id)))))
-                        .bind(("mid", Thing::from(("market", Id::from(&oe.market_id)))))
-                        .bind(("pid", Thing::from(("party", Id::from(&oe.party_id)))))
-                        .bind(("side", oe.side().as_str_name()))
-                        .bind(("price", &oe.price))
-                        .bind(("size", &oe.size))
-                        .bind(("remaining", &oe.remaining))
-                        .bind(("tif", &oe.time_in_force().as_str_name()))
-                        .bind(("type", oe.r#type().as_str_name()))
-                        .bind(("created_at", oe.created_at / 1000))
-                        .bind(("status", oe.status().as_str_name()))
-                        .bind(("expires_at", oe.expires_at / 1000))
-                        .bind(("reference", &oe.reference))
-                        .bind(("reason", oe.reason().as_str_name()))
-                        .bind(("updated_at", oe.updated_at / 1000))
-                        .bind(("version", oe.version))
-                        .bind(("batch_id", oe.batch_id))
-                        // .bind(("pegged_order", &oe.pegged_order))
-                        .bind(("liquidity_provision_id", &oe.liquidity_provision_id)) // TODO linky
-                        .bind(("post_only", oe.post_only))
-                        .bind(("reduce_only", oe.reduce_only))
-                        // .bind(("iceberg_order", oe.iceberg_order))
-                        .await?;
-                    result.check()?;
-                }
+                Event::Order(e) => order::insert(db.clone(), e).await?,
+                Event::Trade(e) => trade::insert(db.clone(), e).await?,
+                Event::LedgerMovements(e) => ledger::insert(db.clone(), e).await?,
                 _ => {}
             }
         }
